@@ -1,0 +1,63 @@
+[project]
+name = "bikez-crawler"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "httpx>=0.27",
+  "motor>=3.5",
+  "pymongo>=4.8",
+  "boto3>=1.34",
+  "aiolimiter>=1.1",
+  "beautifulsoup4>=4.12",
+  "lxml>=5.2",
+  "pydantic-settings>=2.4",
+  "torch>=2.14.0",
+  "torchvision>=0.29.0",
+  "open-clip-torch>=3.3.0",
+  "scikit-learn>=1.9.1",
+  "joblib>=1.6.0",
+  "pillow>=12.3.0",
+  "simple-lama-inpainting>=0.1.0",
+  "tqdm>=4.70.1",
+  "numpy>=2.5.3",
+  "rembg[cpu]>=2.0.84",
+]
+
+[dependency-groups]
+dev = [
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "boto3-stubs[s3]>=1.34",
+]
+
+# This is a CPU-only service (see pipeline/*.py) -- pin torch/torchvision to PyTorch's
+# CPU wheel index so `uv sync` doesn't pull the CUDA runtime (nvidia-*, triton), which
+# adds several GB of dead weight to the production image for a backend that never
+# touches a GPU.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bikez_crawler"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["joblib", "open_clip", "simple_lama_inpainting.*", "sklearn.*", "tqdm.*", "rembg"]
+ignore_missing_imports = true
