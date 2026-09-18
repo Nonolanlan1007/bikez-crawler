@@ -1,10 +1,9 @@
 """Mongo schema and crash-safe lease-based queue claiming.
 
-Replaces the old "claim = delete-then-process" pattern (which lost in-flight work on a
-crash) with a lease: a claimed document is marked with an in-flight status and a
-``lease_expires_at`` timestamp instead of being removed. If the worker crashes before
-finishing, the lease simply expires and another worker (or the same one, after restart)
-can reclaim it — there is never a window where the work exists nowhere.
+A claimed document is marked with an in-flight status and a ``lease_expires_at``
+timestamp instead of being removed, so a crash never loses in-flight work: the lease
+simply expires and another worker (or the same one, after restart) can reclaim it —
+there is never a window where the work exists nowhere.
 
 Both an async (motor, used by the crawler) and a sync (pymongo, used by the CPU-bound
 image pipeline) client are provided, sharing the same collection names, index
@@ -114,15 +113,7 @@ class AsyncDatabase:
         self.crawler_state: AsyncIOMotorCollection[Any] = self.db[CRAWLER_STATE]
 
     async def ensure_schema(self) -> None:
-        """Create indexes and backfill pre-lease-model documents.
-
-        Existing ``pendingLinks`` docs predate the ``status`` field entirely (the old
-        crawler treated mere presence in the collection as "pending"), so without this
-        backfill they'd be invisible to the new claim query and the whole existing backlog
-        would silently stop being processed.
-        """
         await ensure_indexes_async(self.db)
-        await self.pending_links.update_many({"status": {"$exists": False}}, {"$set": {"status": "pending"}})
 
     async def close(self) -> None:
         self.client.close()

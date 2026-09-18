@@ -1,4 +1,4 @@
-"""Generic worker-pool draining, replacing the old p-queue-based ``drainQueue``.
+"""Generic worker-pool draining.
 
 Workers repeatedly claim-and-process items. A worker that finds nothing claimable waits
 briefly instead of exiting immediately, in case another still-active worker is mid-process

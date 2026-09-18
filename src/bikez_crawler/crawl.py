@@ -65,9 +65,7 @@ async def log_progress_periodically(db: AsyncDatabase, interval_seconds: float) 
         logger.info("bikes=%d pending_links=%d images=%d", bikes, pending_links, images)
 
 
-async def run_links_queue(
-    db: AsyncDatabase, http: BikezHttpClient, s3: S3Client, settings: Settings
-) -> None:
+async def run_links_queue(db: AsyncDatabase, http: BikezHttpClient, settings: Settings) -> None:
     bikes_crawled = 0
 
     async def claim_and_process() -> bool:
@@ -82,7 +80,7 @@ async def run_links_queue(
             return False
 
         try:
-            was_bike_page = await crawl_page(doc["link"], db, http, s3, settings)
+            was_bike_page = await crawl_page(doc["link"], db, http)
             await db.pending_links.delete_one({"_id": doc["_id"]})
             if was_bike_page:
                 bikes_crawled += 1
@@ -162,7 +160,7 @@ async def main() -> None:
 
         progress_task = asyncio.create_task(log_progress_periodically(db, PROGRESS_LOG_INTERVAL_SECONDS))
 
-        await run_links_queue(db, http, s3, settings)
+        await run_links_queue(db, http, settings)
         await run_image_download_queue(db, http, s3, settings)
     finally:
         if progress_task is not None:

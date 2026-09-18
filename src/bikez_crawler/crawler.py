@@ -1,4 +1,4 @@
-"""Page routing and scraping logic, ported from the old TypeScript crawler.
+"""Page routing and scraping logic.
 
 Three URL shapes are handled: the years-index page and per-year list pages (both list
 pages, walked identically), and individual bike pages.
@@ -6,7 +6,6 @@ pages, walked identically), and individual bike pages.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -18,10 +17,8 @@ from bs4 import BeautifulSoup, Tag
 from pymongo import InsertOne
 from pymongo.errors import BulkWriteError
 
-from bikez_crawler.config import Settings
 from bikez_crawler.db import AsyncDatabase
 from bikez_crawler.http import BikezHttpClient
-from bikez_crawler.s3 import S3Client
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +33,7 @@ BIKE_PAGE_RE = re.compile(r"^https://bikez\.com/motorcycles/([A-Za-z0-9_]+)\.php
 # viable at all.
 GALLERY_URL_TEMPLATE = "https://bikez.com/gallery/{tag}_poster.php?pictno={pictno}"
 
-# The old crawler probed pictno 1..100 unconditionally; kept here as an absolute safety
-# cap so a website quirk can't turn the resumed walk into an unbounded loop.
+# Absolute safety cap so a website quirk can't turn the resumed walk into an unbounded loop.
 MAX_IMAGE_PICTNO = 100
 
 _DATA_ARRAY_RE = re.compile(r"var dataArray = (\[.*?\]);", re.DOTALL)
@@ -176,24 +172,12 @@ async def crawl_link_list_page(url: str, db: AsyncDatabase, http: BikezHttpClien
     await _insert_pending_links(links, db)
 
 
-async def _discover_images(
-    tag: str, db: AsyncDatabase, http: BikezHttpClient, s3: S3Client, settings: Settings
-) -> None:
+async def _discover_images(tag: str, db: AsyncDatabase, http: BikezHttpClient) -> None:
     bike_doc = await db.bikes.find_one({"tag": tag}, {"image_count": 1})
-    stored_image_count: int | None = bike_doc.get("image_count") if bike_doc else None
+    stored_image_count = bike_doc.get("image_count", 0) if bike_doc else 0
 
-    if stored_image_count is None:
-        # Migration bridge: existing bikes predate image_count tracking. Rather than
-        # redownloading everything to count it, count what's already in the raw bucket.
-        keys = await asyncio.to_thread(
-            lambda: list(s3.list_keys(settings.s3_raw_bucket, f"bikes/{tag}/"))
-        )
-        effective_count = len(keys)
-    else:
-        effective_count = stored_image_count
-
-    highest_seen = effective_count
-    pictno = effective_count + 1
+    highest_seen = stored_image_count
+    pictno = stored_image_count + 1
 
     while pictno <= MAX_IMAGE_PICTNO:
         gallery_url = GALLERY_URL_TEMPLATE.format(tag=tag, pictno=pictno)
@@ -222,13 +206,11 @@ async def _discover_images(
         highest_seen = pictno
         pictno += 1
 
-    if stored_image_count is None or highest_seen > stored_image_count:
+    if highest_seen > stored_image_count:
         await db.bikes.update_one({"tag": tag}, {"$set": {"image_count": highest_seen}})
 
 
-async def crawl_bike_page(
-    url: str, db: AsyncDatabase, http: BikezHttpClient, s3: S3Client, settings: Settings
-) -> None:
+async def crawl_bike_page(url: str, db: AsyncDatabase, http: BikezHttpClient) -> None:
     match = BIKE_PAGE_RE.match(url)
     if not match:
         raise ValueError(f"Could not extract bike tag from {url}")
@@ -248,17 +230,15 @@ async def crawl_bike_page(
         upsert=True,
     )
 
-    await _discover_images(tag, db, http, s3, settings)
+    await _discover_images(tag, db, http)
 
 
-async def crawl_page(
-    url: str, db: AsyncDatabase, http: BikezHttpClient, s3: S3Client, settings: Settings
-) -> bool:
+async def crawl_page(url: str, db: AsyncDatabase, http: BikezHttpClient) -> bool:
     """Route ``url`` to the matching scraper. Returns True iff it was a bike page."""
     if url == YEARS_INDEX_URL or YEAR_LIST_RE.match(url):
         await crawl_link_list_page(url, db, http)
         return False
     if BIKE_PAGE_RE.match(url):
-        await crawl_bike_page(url, db, http, s3, settings)
+        await crawl_bike_page(url, db, http)
         return True
     raise ValueError(f"Unknown page: {url}")

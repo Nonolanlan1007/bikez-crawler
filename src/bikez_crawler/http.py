@@ -1,7 +1,7 @@
 """Rate-limited HTTP client for bikez.com.
 
-Mirrors the old ``p-queue``-based limiter: at most ``interval_cap`` requests started per
-``interval_ms`` window, and at most ``concurrency`` requests in flight at once.
+At most ``interval_cap`` requests started per ``interval_ms`` window, and at most
+``concurrency`` requests in flight at once.
 """
 
 from __future__ import annotations
