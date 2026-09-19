@@ -1,0 +1,93 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bikez-crawler
+  labels:
+    app: bikez-crawler
+spec:
+  schedule: "0 2 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app: bikez-crawler
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: bikez-crawler
+              image: ghcr.io/nonolanlan1007/bikez-crawler:latest
+              args: ["bikez_crawler.crawl"]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi
+              envFrom:
+                - secretRef:
+                    name: bikez-crawler-secrets
+              env:
+                - name: BIKEZ_HTTP_CONCURRENCY
+                  value: "2"
+                - name: BIKEZ_HTTP_INTERVAL_MS
+                  value: "1000"
+                - name: BIKEZ_HTTP_INTERVAL_CAP
+                  value: "3"
+                - name: PENDING_LINKS_CONCURRENCY
+                  value: "3"
+                - name: IMAGE_UPLOAD_CONCURRENCY
+                  value: "3"
+                - name: QUEUE_MAX_ATTEMPTS
+                  value: "5"
+                - name: QUEUE_LEASE_SECONDS
+                  value: "300"
+                - name: RESEED_INTERVAL_DAYS
+                  value: "7"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bikez-pipeline
+  labels:
+    app: bikez-pipeline
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app: bikez-pipeline
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: bikez-pipeline
+              image: ghcr.io/nonolanlan1007/bikez-crawler:latest
+              args: ["bikez_crawler.pipeline"]
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: 4Gi
+                limits:
+                  memory: 6Gi
+              envFrom:
+                - secretRef:
+                    name: bikez-crawler-secrets
+              env:
+                - name: PIPELINE_CONCURRENCY
+                  value: "2"
+                - name: QUEUE_MAX_ATTEMPTS
+                  value: "5"
+                - name: QUEUE_LEASE_SECONDS
+                  value: "300"
