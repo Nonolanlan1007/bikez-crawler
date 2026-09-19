@@ -28,6 +28,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "boto3-stubs[s3]>=1.34",
+  "pytest>=8.3",
 ]
 
 # This is a CPU-only service (see pipeline/*.py) -- pin torch/torchvision to PyTorch's
@@ -53,6 +54,9 @@ packages = ["src/bikez_crawler"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.mypy]
 python_version = "3.12"
