@@ -36,7 +36,9 @@ CRAWLER_STATE = "crawlerState"
 class BikeDoc(TypedDict, total=False):
     tag: str
     brand: str
-    specs: dict[str, dict[str, str]]
+    specs_raw: dict[str, dict[str, str]]
+    specs_normalized: dict[str, Any]
+    specs_mapping_version: int
     crawled_at: datetime
     image_count: int
 

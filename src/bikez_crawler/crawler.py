@@ -19,6 +19,7 @@ from pymongo.errors import BulkWriteError
 
 from bikez_crawler.db import AsyncDatabase
 from bikez_crawler.http import BikezHttpClient
+from bikez_crawler.specs import CURRENT_MAPPING_VERSION, normalize_specs
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +128,13 @@ def table_to_object(table: Tag | None) -> dict[str, dict[str, str]]:
         value = re.sub(r"\s+", " ", value_cell.get_text()).strip()
 
         if key and value:
-            result.setdefault(current_section, {})
-            result[current_section][key] = value
+            section = result.setdefault(current_section, {})
+            unique_key = key
+            occurrence = 2
+            while unique_key in section:
+                unique_key = f"{key} ({occurrence})"
+                occurrence += 1
+            section[unique_key] = value
 
     return result
 
@@ -222,11 +228,20 @@ async def crawl_bike_page(url: str, db: AsyncDatabase, http: BikezHttpClient) ->
     descramble_lazy_fields(soup, html)
 
     brand = extract_brand(soup)
-    specs = table_to_object(find_specs_table(soup))
+    specs_raw = table_to_object(find_specs_table(soup))
 
     await db.bikes.update_one(
         {"tag": tag},
-        {"$set": {"tag": tag, "brand": brand, "specs": specs, "crawled_at": datetime.now(UTC)}},
+        {
+            "$set": {
+                "tag": tag,
+                "brand": brand,
+                "specs_raw": specs_raw,
+                "specs_normalized": normalize_specs(specs_raw),
+                "specs_mapping_version": CURRENT_MAPPING_VERSION,
+                "crawled_at": datetime.now(UTC),
+            }
+        },
         upsert=True,
     )
 
