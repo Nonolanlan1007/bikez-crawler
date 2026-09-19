@@ -1,15 +1,20 @@
-"""Bottom-right bikez.com watermark removal.
+"""bikez.com watermark removal.
 
-Primary method is LaMa inpainting (``simple_lama_inpainting``), which reconstructs
-textured backgrounds (roads, foliage, studio gradients) far better than classical
-inpainting. ``cv2.inpaint`` (Telea) is the fallback when LaMa can't be loaded or fails
-on a given image, since it's ~200x faster but leaves a visible smear on non-flat
-backgrounds.
+Two watermarks are stamped on the poster images. The large translucent "Bikez.com"
+overlay is undone exactly by inverting its alpha blend, so the pixels underneath are
+recovered rather than repainted. The opaque bottom-right logo box can't be inverted and
+is inpainted instead.
+
+Inpainting uses LaMa (``simple_lama_inpainting``), which reconstructs textured
+backgrounds (roads, foliage, studio gradients) far better than classical inpainting.
+``cv2.inpaint`` (Telea) is the fallback when LaMa can't be loaded or fails on a given
+image, since it's ~200x faster but leaves a visible smear on non-flat backgrounds.
 """
 
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -29,6 +34,21 @@ logger = logging.getLogger(__name__)
 WATERMARK_BOX_WIDTH = 340
 WATERMARK_BOX_HEIGHT = 125
 
+CENTER_MASK_PATH = Path(__file__).resolve().parent / "assets" / "center_watermark_mask.png"
+
+# The overlay is a fixed-size stamp anchored to the bottom-right: the mask's top-left
+# corner sits at (width - X, height - Y), so it is simply cropped on small images.
+_CENTER_MASK_ANCHOR_X = 820
+_CENTER_MASK_ANCHOR_Y = 562
+
+# sRGB blend: stamped = (1 - ALPHA * mask) * original + ALPHA * mask * COLOR
+_CENTER_ALPHA = 0.0997
+_CENTER_COLOR = 195.8
+
+# Minimum correlation between the mask and the image's edges before the inversion is
+# applied; the stamp measures 0.07-0.8 on every sample and a misplaced mask ~0.005.
+_CENTER_MIN_EVIDENCE = 0.03
+
 _INPAINT_RADIUS = 3
 
 
@@ -42,8 +62,62 @@ def watermark_mask(size: tuple[int, int]) -> Image.Image:
     return mask
 
 
+def _center_mask(canvas: np.ndarray, width: int, height: int) -> np.ndarray | None:
+    """Full-frame float mask (0-1) of the center overlay, or ``None`` if it is off-image."""
+    x0 = width - _CENTER_MASK_ANCHOR_X
+    y0 = height - _CENTER_MASK_ANCHOR_Y
+    xs, ys = max(0, x0), max(0, y0)
+    xe, ye = min(width, x0 + canvas.shape[1]), min(height, y0 + canvas.shape[0])
+    if xe <= xs or ye <= ys:
+        return None
+    mask = np.zeros((height, width), np.float32)
+    mask[ys:ye, xs:xe] = canvas[ys - y0 : ye - y0, xs - x0 : xe - x0]
+    return mask
+
+
+def _center_evidence(pixels: np.ndarray, mask: np.ndarray) -> float | None:
+    """Correlation between the mask's edges and the image's edges, signed so that the
+    overlay's lightening of dark areas and darkening of bright areas both count as
+    agreement. ``None`` when too little of the overlay is inside the image."""
+    height, width = mask.shape
+    gray = pixels.mean(axis=2)
+    sign = np.sign(_CENTER_COLOR - cv2.GaussianBlur(gray, (0, 0), 4))
+    image_edges = np.clip(gray - cv2.GaussianBlur(gray, (0, 0), 3), -10, 10) * sign
+    mask_edges = mask - cv2.GaussianBlur(mask, (0, 0), 3)
+
+    region = cv2.dilate((mask > 0.02).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+    region[max(0, height - WATERMARK_BOX_HEIGHT - 15) :, max(0, width - WATERMARK_BOX_WIDTH - 10) :] = False
+    if region.sum() < 400:
+        return None
+
+    a = mask_edges[region] - mask_edges[region].mean()
+    b = image_edges[region] - image_edges[region].mean()
+    denominator = float(np.sqrt((a * a).sum() * (b * b).sum()))
+    if denominator < 1e-6:
+        return None
+    return float((a * b).sum() / denominator)
+
+
+def _remove_center_watermark(image: Image.Image, canvas: np.ndarray) -> Image.Image:
+    pixels = np.asarray(image, dtype=np.float32)
+    mask = _center_mask(canvas, image.width, image.height)
+    if mask is None:
+        return image
+
+    evidence = _center_evidence(pixels, mask)
+    if evidence is None or evidence < _CENTER_MIN_EVIDENCE:
+        logger.info("center watermark not detected (evidence=%s)", evidence)
+        return image
+
+    alpha = (mask * _CENTER_ALPHA)[..., None]
+    restored = (pixels - alpha * _CENTER_COLOR) / (1 - alpha)
+    logger.info("center watermark removed (evidence=%.3f)", evidence)
+    return Image.fromarray(np.clip(np.rint(restored), 0, 255).astype(np.uint8))
+
+
 class WatermarkRemover:
-    """Loads the LaMa model once per process and reuses it across images."""
+    """Loads the LaMa model and the center-watermark mask once per process and reuses
+    them across images."""
 
     def __init__(self) -> None:
         self._lama: Any | None = None
@@ -55,8 +129,21 @@ class WatermarkRemover:
                 exc_info=True,
             )
 
+        self._center_canvas: np.ndarray | None = None
+        canvas = cv2.imread(str(CENTER_MASK_PATH), cv2.IMREAD_GRAYSCALE)
+        if canvas is None:
+            logger.warning(
+                "Failed to load center watermark mask from %s; center watermark will not be removed",
+                CENTER_MASK_PATH,
+            )
+        else:
+            self._center_canvas = canvas.astype(np.float32) / 255.0
+
     def remove(self, image: Image.Image) -> Image.Image:
         rgb = image.convert("RGB")
+        if self._center_canvas is not None:
+            rgb = _remove_center_watermark(rgb, self._center_canvas)
+
         mask = watermark_mask(rgb.size)
         if self._lama is not None:
             try:

@@ -27,9 +27,9 @@ YEAR_LIST_RE = re.compile(r"^https://bikez\.com/year/([0-9]{4})-motorcycle-model
 BIKE_PAGE_RE = re.compile(r"^https://bikez\.com/motorcycles/([A-Za-z0-9_]+)\.php$")
 
 # `_poster.php` (not `_picture.php`, which only links a ~400px thumbnail) links the
-# full-resolution original. Both of bikez.com's watermarks are fixed pixel dimensions
-# regardless of source resolution (see pipeline/watermark.py), so the bigger the source
-# image, the smaller a fraction of it they cover -- this is what makes watermark removal
+# full-resolution original. The corner watermark is a fixed pixel size regardless of
+# source resolution (see pipeline/watermark.py), so the bigger the source image, the
+# smaller a fraction of it the watermark covers -- this is what makes watermark removal
 # viable at all.
 GALLERY_URL_TEMPLATE = "https://bikez.com/gallery/{tag}_poster.php?pictno={pictno}"
 
