@@ -1,4 +1,4 @@
-"""Entrypoint: ``python -m bikez_crawler.pipeline [--bike TAG]``."""
+"""Entrypoint: ``python -m bikez_crawler.pipeline --stage STAGE [--bike TAG]``."""
 
 from __future__ import annotations
 
@@ -12,6 +12,12 @@ from .worker import run
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CPU image-processing pipeline for bikez-crawler")
+    parser.add_argument(
+        "--stage",
+        choices=("preprocess", "background"),
+        default="preprocess",
+        help="Run the model-isolated preprocessing or background-removal stage",
+    )
     parser.add_argument("--bike", default=None, help="Restrict to a single bike tag (test mode)")
     args = parser.parse_args()
 
@@ -21,7 +27,7 @@ def main() -> None:
     if args.bike:
         settings.pipeline_bike_tag = args.bike
 
-    run(settings)
+    run(settings, stage=args.stage)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     pipeline_concurrency: int = 2
     pipeline_bike_tag: str | None = None
+    pipeline_intermediate_prefix: str = "pipeline/intermediate"
 
 
 def load_settings() -> Settings:

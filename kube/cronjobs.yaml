@@ -71,22 +71,42 @@ spec:
             app: bikez-pipeline
         spec:
           restartPolicy: Never
-          containers:
-            - name: bikez-pipeline
+          initContainers:
+            - name: bikez-preprocess
               image: ghcr.io/nonolanlan1007/bikez-crawler:latest
-              args: ["bikez_crawler.pipeline"]
+              args: ["bikez_crawler.pipeline", "--stage", "preprocess"]
               resources:
                 requests:
                   cpu: "2"
-                  memory: 4Gi
-                limits:
                   memory: 6Gi
+                limits:
+                  memory: 8Gi
               envFrom:
                 - secretRef:
                     name: bikez-crawler-secrets
               env:
                 - name: PIPELINE_CONCURRENCY
-                  value: "2"
+                  value: "1"
+                - name: QUEUE_MAX_ATTEMPTS
+                  value: "5"
+                - name: QUEUE_LEASE_SECONDS
+                  value: "300"
+          containers:
+            - name: bikez-background
+              image: ghcr.io/nonolanlan1007/bikez-crawler:latest
+              args: ["bikez_crawler.pipeline", "--stage", "background"]
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: 6Gi
+                limits:
+                  memory: 8Gi
+              envFrom:
+                - secretRef:
+                    name: bikez-crawler-secrets
+              env:
+                - name: PIPELINE_CONCURRENCY
+                  value: "1"
                 - name: QUEUE_MAX_ATTEMPTS
                   value: "5"
                 - name: QUEUE_LEASE_SECONDS

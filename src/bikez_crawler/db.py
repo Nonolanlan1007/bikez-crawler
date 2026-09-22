@@ -55,7 +55,16 @@ class PendingLinkDoc(TypedDict, total=False):
     lease_expires_at: datetime | None
 
 
-ImageStatus = Literal["discovered", "downloading", "raw_downloaded", "processing", "processed", "failed"]
+ImageStatus = Literal[
+    "discovered",
+    "downloading",
+    "raw_downloaded",
+    "preprocessing",
+    "background_pending",
+    "background_processing",
+    "processed",
+    "failed",
+]
 
 
 class ImageDoc(TypedDict, total=False):
@@ -65,8 +74,10 @@ class ImageDoc(TypedDict, total=False):
     status: ImageStatus
     raw_key: str | None
     raw_hash: str | None
+    intermediate_key: str | None
     category: str | None
     subject: Literal["illustration", "photograph"] | None
+    background_eligible: bool | None
     background_removed: bool | None
     production_key: str | None
     attempts: int
